@@ -60,13 +60,13 @@ and fill it in.
 
 ```sh
 # Preview what would be sent, changing nothing:
-DRY_RUN=true go run .
+DRY_RUN=true go run ./cmd/mailtoprint-forward
 
 # Forward for real:
-go run .
+go run ./cmd/mailtoprint-forward
 
 # Or build a static binary:
-go build -o mtpf .
+go build -o mtpf ./cmd/mailtoprint-forward
 ./mtpf
 ```
 

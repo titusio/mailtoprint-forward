@@ -5,15 +5,19 @@ package main
 import (
 	"log"
 	"os"
+
+	"github.com/titus/mailtoprint-forward/internal/config"
+	"github.com/titus/mailtoprint-forward/internal/relay"
+	"github.com/titus/mailtoprint-forward/internal/source"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("mailtoprint-forward: ")
 
-	loadDotEnv()
+	config.LoadDotEnv()
 
-	cfg, err := loadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
@@ -23,8 +27,8 @@ func main() {
 	}
 }
 
-func run(cfg *Config) error {
-	ic, err := dialIMAP(cfg)
+func run(cfg *config.Config) error {
+	ic, err := source.Dial(cfg)
 	if err != nil {
 		return err
 	}
@@ -61,14 +65,14 @@ func run(cfg *Config) error {
 				continue
 			}
 
-			raw, err := buildMessage(cfg, msg, att)
+			raw, err := relay.Build(cfg, msg, att)
 			if err != nil {
 				log.Printf("uid %d: build %q failed: %v", msg.UID, att.Filename, err)
 				failed++
 				allOK = false
 				continue
 			}
-			if err := sendMessage(cfg, raw); err != nil {
+			if err := relay.Send(cfg, raw); err != nil {
 				log.Printf("uid %d: send %q failed: %v", msg.UID, att.Filename, err)
 				failed++
 				allOK = false

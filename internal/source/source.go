@@ -1,4 +1,6 @@
-package main
+// Package source reads unseen messages from an IMAP mailbox and extracts their
+// attachments.
+package source
 
 import (
 	"bytes"
@@ -11,24 +13,19 @@ import (
 
 	// Register additional charset decoders so non-UTF-8 messages parse.
 	_ "github.com/emersion/go-message/charset"
+
+	"github.com/titus/mailtoprint-forward/internal/config"
+	"github.com/titus/mailtoprint-forward/internal/mailmsg"
 )
 
-// SourceMessage is a fetched message together with the attachments pulled from it.
-type SourceMessage struct {
-	UID         imap.UID
-	Subject     string
-	From        string
-	Attachments []Attachment
-}
-
-// IMAPClient wraps an authenticated connection to the source mailbox.
-type IMAPClient struct {
+// Client wraps an authenticated connection to the source mailbox.
+type Client struct {
 	c   *imapclient.Client
-	cfg *Config
+	cfg *config.Config
 }
 
-// dialIMAP connects, authenticates and selects the configured mailbox.
-func dialIMAP(cfg *Config) (*IMAPClient, error) {
+// Dial connects, authenticates and selects the configured mailbox.
+func Dial(cfg *config.Config) (*Client, error) {
 	addr := fmt.Sprintf("%s:%d", cfg.IMAPHost, cfg.IMAPPort)
 	// A non-nil Options is required: DialTLS -> Options.dialer() dereferences the
 	// receiver without a nil check (go-imap v2.0.0-beta.6).
@@ -47,16 +44,16 @@ func dialIMAP(cfg *Config) (*IMAPClient, error) {
 		return nil, fmt.Errorf("select mailbox %q: %w", cfg.Mailbox, err)
 	}
 
-	return &IMAPClient{c: c, cfg: cfg}, nil
+	return &Client{c: c, cfg: cfg}, nil
 }
 
-func (ic *IMAPClient) Close() error {
+func (ic *Client) Close() error {
 	ic.c.Logout().Wait()
 	return ic.c.Close()
 }
 
 // FetchUnseen returns all unseen messages in the mailbox with their attachments.
-func (ic *IMAPClient) FetchUnseen() ([]SourceMessage, error) {
+func (ic *Client) FetchUnseen() ([]mailmsg.SourceMessage, error) {
 	criteria := &imap.SearchCriteria{
 		NotFlag: []imap.Flag{imap.FlagSeen},
 	}
@@ -90,14 +87,14 @@ func (ic *IMAPClient) FetchUnseen() ([]SourceMessage, error) {
 		return nil, fmt.Errorf("fetch messages: %w", err)
 	}
 
-	var out []SourceMessage
+	var out []mailmsg.SourceMessage
 	for _, buf := range buffers {
 		raw := firstBodySection(buf)
 		if raw == nil {
 			continue
 		}
 
-		msg := SourceMessage{UID: buf.UID}
+		msg := mailmsg.SourceMessage{UID: buf.UID}
 		if buf.Envelope != nil {
 			msg.Subject = buf.Envelope.Subject
 			if len(buf.Envelope.From) > 0 {
@@ -107,7 +104,7 @@ func (ic *IMAPClient) FetchUnseen() ([]SourceMessage, error) {
 
 		// Guard against servers whose SUBJECT search is looser than a plain
 		// substring match: skip anything that doesn't actually match the Betreff.
-		if !ic.cfg.subjectMatches(msg.Subject) {
+		if !ic.cfg.SubjectMatches(msg.Subject) {
 			continue
 		}
 
@@ -124,7 +121,7 @@ func (ic *IMAPClient) FetchUnseen() ([]SourceMessage, error) {
 }
 
 // MarkSeen flags a message as read so it is skipped on subsequent runs.
-func (ic *IMAPClient) MarkSeen(uid imap.UID) error {
+func (ic *Client) MarkSeen(uid imap.UID) error {
 	// STORE responses arrive as FETCH data; Close waits for completion and we
 	// don't need the returned flags.
 	return ic.c.Store(imap.UIDSetNum(uid), &imap.StoreFlags{
@@ -141,13 +138,13 @@ func firstBodySection(buf *imapclient.FetchMessageBuffer) []byte {
 }
 
 // extractAttachments walks a raw RFC 5322 message and returns its attachment parts.
-func extractAttachments(raw []byte, cfg *Config) ([]Attachment, error) {
+func extractAttachments(raw []byte, cfg *config.Config) ([]mailmsg.Attachment, error) {
 	mr, err := mail.CreateReader(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
 
-	var atts []Attachment
+	var atts []mailmsg.Attachment
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -166,7 +163,7 @@ func extractAttachments(raw []byte, cfg *Config) ([]Attachment, error) {
 		if filename == "" {
 			continue
 		}
-		if !cfg.extAllowed(filename) {
+		if !cfg.ExtAllowed(filename) {
 			continue
 		}
 
@@ -176,7 +173,7 @@ func extractAttachments(raw []byte, cfg *Config) ([]Attachment, error) {
 		}
 
 		ct, _, _ := ah.ContentType()
-		atts = append(atts, Attachment{
+		atts = append(atts, mailmsg.Attachment{
 			Filename:    filename,
 			ContentType: ct,
 			Data:        data,

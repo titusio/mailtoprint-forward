@@ -1,4 +1,6 @@
-package main
+// Package relay builds forwarded messages and delivers them to the mail-to-print
+// destination over SMTP.
+package relay
 
 import (
 	"bytes"
@@ -9,11 +11,14 @@ import (
 	"time"
 
 	"github.com/emersion/go-message/mail"
+
+	"github.com/titus/mailtoprint-forward/internal/config"
+	"github.com/titus/mailtoprint-forward/internal/mailmsg"
 )
 
-// buildMessage assembles an RFC 5322 message carrying a single attachment,
-// addressed to the mail-to-print destination.
-func buildMessage(cfg *Config, src SourceMessage, att Attachment) ([]byte, error) {
+// Build assembles an RFC 5322 message carrying a single attachment, addressed to
+// the mail-to-print destination.
+func Build(cfg *config.Config, src mailmsg.SourceMessage, att mailmsg.Attachment) ([]byte, error) {
 	var buf bytes.Buffer
 
 	var h mail.Header
@@ -72,9 +77,9 @@ func buildMessage(cfg *Config, src SourceMessage, att Attachment) ([]byte, error
 	return buf.Bytes(), nil
 }
 
-// sendMessage delivers a pre-built message via the configured SMTP relay,
-// handling both STARTTLS (typically port 587) and implicit TLS (port 465).
-func sendMessage(cfg *Config, msg []byte) error {
+// Send delivers a pre-built message via the configured SMTP relay, handling both
+// STARTTLS (typically port 587) and implicit TLS (port 465).
+func Send(cfg *config.Config, msg []byte) error {
 	addr := fmt.Sprintf("%s:%d", cfg.SMTPHost, cfg.SMTPPort)
 	auth := smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
 
@@ -84,7 +89,7 @@ func sendMessage(cfg *Config, msg []byte) error {
 	return smtp.SendMail(addr, auth, cfg.From, []string{cfg.PrintAddr}, msg)
 }
 
-func sendImplicitTLS(cfg *Config, addr string, auth smtp.Auth, msg []byte) error {
+func sendImplicitTLS(cfg *config.Config, addr string, auth smtp.Auth, msg []byte) error {
 	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: cfg.SMTPHost})
 	if err != nil {
 		return fmt.Errorf("tls dial %s: %w", addr, err)

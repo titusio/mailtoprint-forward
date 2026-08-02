@@ -1,4 +1,5 @@
-package main
+// Package config loads and validates all runtime settings from the environment.
+package config
 
 import (
 	"fmt"
@@ -46,7 +47,9 @@ type Config struct {
 	DryRun bool
 }
 
-func loadConfig() (*Config, error) {
+// Load reads configuration from the environment, applies defaults, and validates
+// that all required settings are present.
+func Load() (*Config, error) {
 	c := &Config{
 		IMAPHost:      os.Getenv("IMAP_HOST"),
 		IMAPUser:      os.Getenv("IMAP_USER"),
@@ -113,8 +116,8 @@ func loadConfig() (*Config, error) {
 	return c, nil
 }
 
-// extAllowed reports whether an attachment filename passes the AllowExt filter.
-func (c *Config) extAllowed(filename string) bool {
+// ExtAllowed reports whether an attachment filename passes the AllowExt filter.
+func (c *Config) ExtAllowed(filename string) bool {
 	if len(c.AllowExt) == 0 {
 		return true
 	}
@@ -127,12 +130,24 @@ func (c *Config) extAllowed(filename string) bool {
 	return false
 }
 
-// subjectMatches reports whether a message subject passes the Betreff filter.
-func (c *Config) subjectMatches(subject string) bool {
+// SubjectMatches reports whether a message subject passes the Betreff filter.
+func (c *Config) SubjectMatches(subject string) bool {
 	if c.SubjectFilter == "" {
 		return true
 	}
 	return strings.Contains(strings.ToLower(subject), strings.ToLower(c.SubjectFilter))
+}
+
+// deriveSMTPHost turns an "imap.example.com" host into "smtp.example.com" as a
+// best-effort default when SMTP_HOST is not provided.
+func deriveSMTPHost(imapHost string) string {
+	if imapHost == "" {
+		return ""
+	}
+	if strings.HasPrefix(imapHost, "imap.") {
+		return "smtp." + strings.TrimPrefix(imapHost, "imap.")
+	}
+	return imapHost
 }
 
 // envFirst returns the value of the first environment variable that is set,
@@ -169,16 +184,4 @@ func envBool(key string, def bool) bool {
 		}
 	}
 	return def
-}
-
-// deriveSMTPHost turns an "imap.example.com" host into "smtp.example.com" as a
-// best-effort default when SMTP_HOST is not provided.
-func deriveSMTPHost(imapHost string) string {
-	if imapHost == "" {
-		return ""
-	}
-	if strings.HasPrefix(imapHost, "imap.") {
-		return "smtp." + strings.TrimPrefix(imapHost, "imap.")
-	}
-	return imapHost
 }
